@@ -139,16 +139,12 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
 
 		// homogeneous transformation of the coordinates of the measurements
-		auto to_map_coordinate = [&p](LandmarkObs &obs){
+		auto to_map_coordinate_and_find_imilar = [&p, &landmarks](LandmarkObs &obs){
 			// transform to map coordinate
 			obs.x = p.x + (cos(p.theta) * obs.x) - (sin(p.theta) * obs.y);
 			obs.y = p.y + (sin(p.theta) * obs.x) + (cos(p.theta) * obs.y);
-		};
-		std::for_each(measurements.begin(), measurements.end(), to_map_coordinate);
 
-
-		// associate every observation with a landmark
-		auto find_similar = [&landmarks](LandmarkObs &obs){
+			// associate every observation with a landmark
 			// calculate the distance of every predicted to our observation and save it in distances
 			vector<double> distances(landmarks.size());
 			std::transform(landmarks.begin(), landmarks.end(), distances.begin(),
@@ -161,7 +157,8 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			// set the id of the observation to the id of the prediction
 			obs.id = landmarks[min_index].id;
 		};
-		std::for_each(measurements.begin(), measurements.end(), find_similar);
+		std::for_each(measurements.begin(), measurements.end(), to_map_coordinate_and_find_imilar);
+
 
 		// calculate the individual wheifg of every observation
 		auto observation_weight = [&landmarks, &std_landmark](LandmarkObs &obs){
@@ -184,7 +181,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		vector<double> individual_weights(measurements.size());
 		std::transform(measurements.begin(), measurements.end(), individual_weights.begin(), observation_weight);
 		// update the weight of the particle
-		p.weight = 3;
+		p.weight = std::accumulate(individual_weights.begin(), individual_weights.end(), 1, std::multiplies<double>());;
 
 	};
 	std::for_each(particles.begin(), particles.end(), update_single_weight);
