@@ -83,6 +83,23 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
    *   during the updateWeights phase.
    */
 
+	auto find_similar = [&predicted](LandmarkObs &observation){
+		// calculate the distance of every predicted to our observation and save it in distances
+		vector<double> distances(predicted.size());
+		std::transform(predicted.begin(), predicted.end(), distances.begin(),
+				[&observation](LandmarkObs pred){
+					return dist(observation.x, observation.y, pred.x, pred.y);
+				}
+		);
+		// check for the minimum
+		unsigned int min_index = std::min_element(distances.begin(), distances.end()) - distances.begin();
+		// set the id of the observation to the id of the prediction
+		observation.id = predicted[min_index].id;
+	};
+
+	// do the process in every observation
+	std::for_each(observations.begin(), observations.end(), find_similar);
+
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
@@ -101,6 +118,21 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
    *   and the following is a good resource for the actual equation to implement
    *   (look at equation 3.33) http://planning.cs.uiuc.edu/node99.html
    */
+
+	// TODO I think this i for landmarks in the map that are within the range, no observations
+	auto in_range = [sensor_range](const Particle &p, const Map::single_landmark_s &lm) -> bool{
+		return (dist(p.x, p.y, lm.x_f, lm.y_f) <= sensor_range);
+	};
+
+	auto to_map_coordinate = [](const Particle &p, const LandmarkObs &obs) -> LandmarkObs{
+		// transform to map coordinate
+		LandmarkObs out;
+		out.id = obs.id;
+		out.x = p.x + (cos(p.theta) * obs.x) - (sin(p.theta) * obs.y);
+		out.y = p.y + (sin(p.theta) * obs.x) + (cos(p.theta) * obs.y);
+		return out;
+	};
+
 
 }
 
