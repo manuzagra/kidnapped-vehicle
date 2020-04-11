@@ -16,6 +16,7 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <type_traits>
 
 
 using std::string;
@@ -103,7 +104,7 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
-                                   const vector<LandmarkObs> &observations, 
+                                   vector<LandmarkObs> &observations,
                                    const Map &map_landmarks) {
   /**
    * TODO: Update the weights of each particle using a mult-variate Gaussian 
@@ -118,21 +119,75 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
    *   and the following is a good resource for the actual equation to implement
    *   (look at equation 3.33) http://planning.cs.uiuc.edu/node99.html
    */
-
-	// TODO I think this i for landmarks in the map that are within the range, no observations
-	auto in_range = [sensor_range](const Particle &p, const Map::single_landmark_s &lm) -> bool{
-		return (dist(p.x, p.y, lm.x_f, lm.y_f) <= sensor_range);
+	// for convenience convert the map single_landmark_s to LandmarkObs
+	auto SingleLandmark_to_LandmarkObs = [](const Map::single_landmark_s &map_landmark) -> LandmarkObs{
+		return LandmarkObs{map_landmark.id_i, map_landmark.x_f, map_landmark.y_f};
 	};
+	vector<LandmarkObs> landmarks(map_landmarks.landmark_list.size());
+	std::transform(map_landmarks.landmark_list.begin(), map_landmarks.landmark_list.end(), landmarks.begin(), SingleLandmark_to_LandmarkObs);
 
-	auto to_map_coordinate = [](const Particle &p, const LandmarkObs &obs) -> LandmarkObs{
-		// transform to map coordinate
-		LandmarkObs out;
-		out.id = obs.id;
-		out.x = p.x + (cos(p.theta) * obs.x) - (sin(p.theta) * obs.y);
-		out.y = p.y + (sin(p.theta) * obs.x) + (cos(p.theta) * obs.y);
-		return out;
+
+	// this function is going to run for every particle in this->particles
+	auto update_single_weight = [sensor_range, &std_landmark, observations, landmarks](Particle &p) mutable{
+		// observations, landmarks are captured by copy because we are going to modify them here
+
+		// Only landmarks within the sensor_range will be used
+		auto out_range = [sensor_range, &p](LandmarkObs &lm) -> bool{
+			return (dist(p.x, p.y, lm.x, lm.y) > sensor_range);
+		};
+		std::remove_if(landmarks.begin(), landmarks.end(), out_range);
+
+
+		// homogeneous transformation of the coordinates of the observations
+		auto to_map_coordinate = [&p](LandmarkObs &obs){
+			// transform to map coordinate
+			obs.x = p.x + (cos(p.theta) * obs.x) - (sin(p.theta) * obs.y);
+			obs.y = p.y + (sin(p.theta) * obs.x) + (cos(p.theta) * obs.y);
+		};
+		std::for_each(observations.begin(), observations.end(), to_map_coordinate);
+
+
+		// associate every observation with a landmark
+		auto find_similar = [&landmarks](LandmarkObs &obs){
+			// calculate the distance of every predicted to our observation and save it in distances
+			vector<double> distances(landmarks.size());
+			std::transform(landmarks.begin(), landmarks.end(), distances.begin(),
+					[&obs](LandmarkObs pred){
+						return dist(obs.x, obs.y, pred.x, pred.y);
+					}
+			);
+			// check for the minimum
+			unsigned int min_index = std::min_element(distances.begin(), distances.end()) - distances.begin();
+			// set the id of the observation to the id of the prediction
+			obs.id = landmarks[min_index].id;
+		};
+		std::for_each(observations.begin(), observations.end(), find_similar);
+
+		// calculate the individual wheifg of every observation
+		auto observation_weight = [&landmarks, &std_landmark](LandmarkObs &obs){
+			// multivariate normal distribution to calculate the weight
+			auto multivariate_normal_distribution = [](double mu_x, double mu_y, double std_x, double std_y, double x, double y){
+			  // calculate normalization term
+			  double gauss_norm = 1 / (2 * M_PI * std_x * std_y);
+			  // calculate exponent
+			  double exponent = (pow(x - mu_x, 2) / (2 * pow(std_x, 2)))
+						   + (pow(y - mu_y, 2) / (2 * pow(std_y, 2)));
+			  // calculate weight using normalization terms and exponent
+			  double weight = gauss_norm * exp(-exponent);
+			  return weight;
+			};
+			// find the landmark with given id
+			LandmarkObs related_lm = *std::find_if(landmarks.begin(), landmarks.end(), [&obs](LandmarkObs lm){return (obs.id == lm.id);});
+			// return the probability
+			return multivariate_normal_distribution(related_lm.x, related_lm.y, std_landmark[0], std_landmark[1], obs.x, obs.y);
+		};
+		vector<double> individual_weights(observations.size());
+		std::transform(observations.begin(), observations.end(), individual_weights.begin(), observation_weight);
+		// update the weight of the particle
+		p.weight = 3;
+
 	};
-
+	std::for_each(particles.begin(), particles.end(), update_single_weight);
 
 }
 
