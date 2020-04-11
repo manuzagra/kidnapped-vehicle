@@ -77,7 +77,7 @@ class ParticleFilter {
    * @param map Map class containing map landmarks
    */
   void updateWeights(double sensor_range, double std_landmark[], 
-                     std::vector<LandmarkObs> &observations,
+                     const std::vector<LandmarkObs> &observations,
                      const Map &map_landmarks);
   
   /**

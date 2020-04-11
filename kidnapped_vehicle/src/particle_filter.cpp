@@ -39,7 +39,6 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 
 	particles = std::vector<Particle>(num_particles);
 	for (unsigned int i=0; i<num_particles; ++i){
-		Particle p;
 		particles[i].id = i;
 		particles[i].x = x + noise_x(rand_eng);
 		particles[i].y = y + noise_y(rand_eng);
@@ -64,9 +63,9 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
 	std::normal_distribution<double> noise_theta{0,std_pos[2]};
 
 	auto move = [this, delta_t, std_pos, velocity, yaw_rate, &noise_x, &noise_y, &noise_theta](Particle &p){
-		p.x = p.x + velocity/yaw_rate*(sin(p.theta+yaw_rate*delta_t)-sin(p.theta)) + noise_x(rand_eng);
-		p.y = p.y + velocity/yaw_rate*(cos(p.theta)-cos(p.theta+yaw_rate*delta_t)) + noise_y(rand_eng);
-		p.theta = p.theta + yaw_rate*delta_t + noise_theta(rand_eng);
+		p.x = p.x + velocity/yaw_rate*(sin(p.theta+yaw_rate*delta_t)-sin(p.theta)) + noise_x(this->rand_eng);
+		p.y = p.y + velocity/yaw_rate*(cos(p.theta)-cos(p.theta+yaw_rate*delta_t)) + noise_y(this->rand_eng);
+		p.theta = p.theta + yaw_rate*delta_t + noise_theta(this->rand_eng);
 	};
 
 	std::for_each(particles.begin(), particles.end(), move);
@@ -104,7 +103,7 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
-                                   vector<LandmarkObs> &observations,
+                                   const vector<LandmarkObs> &observations,
                                    const Map &map_landmarks) {
   /**
    * TODO: Update the weights of each particle using a mult-variate Gaussian 
@@ -126,10 +125,11 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	vector<LandmarkObs> landmarks(map_landmarks.landmark_list.size());
 	std::transform(map_landmarks.landmark_list.begin(), map_landmarks.landmark_list.end(), landmarks.begin(), SingleLandmark_to_LandmarkObs);
 
-
+	// make a copy of observations
+	vector<LandmarkObs> measurements = observations;
 	// this function is going to run for every particle in this->particles
-	auto update_single_weight = [sensor_range, &std_landmark, observations, landmarks](Particle &p) mutable{
-		// observations, landmarks are captured by copy because we are going to modify them here
+	auto update_single_weight = [sensor_range, &std_landmark, measurements, landmarks](Particle &p) mutable{
+		// measurements, landmarks are captured by copy because we are going to modify them here
 
 		// Only landmarks within the sensor_range will be used
 		auto out_range = [sensor_range, &p](LandmarkObs &lm) -> bool{
@@ -138,13 +138,13 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		std::remove_if(landmarks.begin(), landmarks.end(), out_range);
 
 
-		// homogeneous transformation of the coordinates of the observations
+		// homogeneous transformation of the coordinates of the measurements
 		auto to_map_coordinate = [&p](LandmarkObs &obs){
 			// transform to map coordinate
 			obs.x = p.x + (cos(p.theta) * obs.x) - (sin(p.theta) * obs.y);
 			obs.y = p.y + (sin(p.theta) * obs.x) + (cos(p.theta) * obs.y);
 		};
-		std::for_each(observations.begin(), observations.end(), to_map_coordinate);
+		std::for_each(measurements.begin(), measurements.end(), to_map_coordinate);
 
 
 		// associate every observation with a landmark
@@ -161,7 +161,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			// set the id of the observation to the id of the prediction
 			obs.id = landmarks[min_index].id;
 		};
-		std::for_each(observations.begin(), observations.end(), find_similar);
+		std::for_each(measurements.begin(), measurements.end(), find_similar);
 
 		// calculate the individual wheifg of every observation
 		auto observation_weight = [&landmarks, &std_landmark](LandmarkObs &obs){
@@ -181,8 +181,8 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			// return the probability
 			return multivariate_normal_distribution(related_lm.x, related_lm.y, std_landmark[0], std_landmark[1], obs.x, obs.y);
 		};
-		vector<double> individual_weights(observations.size());
-		std::transform(observations.begin(), observations.end(), individual_weights.begin(), observation_weight);
+		vector<double> individual_weights(measurements.size());
+		std::transform(measurements.begin(), measurements.end(), individual_weights.begin(), observation_weight);
 		// update the weight of the particle
 		p.weight = 3;
 
@@ -198,7 +198,21 @@ void ParticleFilter::resample() {
    * NOTE: You may find std::discrete_distribution helpful here.
    *   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
    */
+	// get the weights
+	vector<double> weights(num_particles);
+	std::transform(particles.begin(), particles.end(), weights.begin(),
+			[](Particle &p){return p.weight;}
+	);
+	// using std::discrete_distribution to get the new particles
+    std::discrete_distribution<> random_index_generator(weights.begin(), weights.end());
 
+    std::vector<Particle> new_particles(num_particles);
+    std::for_each(new_particles.begin(), new_particles.end(),
+    		[this, &random_index_generator](Particle &p){
+    			p = this->particles[random_index_generator(this->rand_eng)];
+    		}
+	);
+    particles = new_particles;
 }
 
 void ParticleFilter::SetAssociations(Particle& particle, 
