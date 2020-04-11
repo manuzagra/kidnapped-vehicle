@@ -5,6 +5,7 @@
  * Author: Tiffany Huang
  */
 
+#include <helper_functions.hpp>
 #include "particle_filter.h"
 
 #include <math.h>
@@ -16,7 +17,6 @@
 #include <string>
 #include <vector>
 
-#include "helper_functions.h"
 
 using std::string;
 using std::vector;
@@ -30,8 +30,21 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
    * NOTE: Consult particle_filter.h for more information about this method 
    *   (and others in this file).
    */
-  num_particles = 0;  // TODO: Set the number of particles
+	// normal distributions for the noise in the initialization
+	std::normal_distribution<double> noise_x{0,std[0]};
+	std::normal_distribution<double> noise_y{0,std[1]};
+	std::normal_distribution<double> noise_theta{0,std[2]};
 
+
+	particles = std::vector<Particle>(num_particles);
+	for (unsigned int i=0; i<num_particles; ++i){
+		Particle p;
+		particles[i].id = i;
+		particles[i].x = x + noise_x(rand_eng);
+		particles[i].y = y + noise_y(rand_eng);
+		particles[i].theta = theta + noise_theta(rand_eng);
+		particles[i].weight = 1;
+	}
 }
 
 void ParticleFilter::prediction(double delta_t, double std_pos[], 
@@ -43,6 +56,19 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
    *  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
    *  http://www.cplusplus.com/reference/random/default_random_engine/
    */
+	// normal distributions for the noise in the movement
+	// this is going to be constant, it would be more efficient to do it in the constructor
+	std::normal_distribution<double> noise_x{0,std_pos[0]};
+	std::normal_distribution<double> noise_y{0,std_pos[1]};
+	std::normal_distribution<double> noise_theta{0,std_pos[2]};
+
+	auto move = [this, delta_t, std_pos, velocity, yaw_rate, &noise_x, &noise_y, &noise_theta](Particle &p){
+		p.x = p.x + velocity/yaw_rate*(sin(p.theta+yaw_rate*delta_t)-sin(p.theta)) + noise_x(rand_eng);
+		p.y = p.y + velocity/yaw_rate*(cos(p.theta)-cos(p.theta+yaw_rate*delta_t)) + noise_y(rand_eng);
+		p.theta = p.theta + yaw_rate*delta_t + noise_theta(rand_eng);
+	};
+
+	std::for_each(particles.begin(), particles.end(), move);
 
 }
 

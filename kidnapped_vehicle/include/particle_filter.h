@@ -9,9 +9,10 @@
 #ifndef PARTICLE_FILTER_H_
 #define PARTICLE_FILTER_H_
 
+#include <helper_functions.hpp>
 #include <string>
 #include <vector>
-#include "helper_functions.h"
+#include <random>
 
 struct Particle {
   int id;
@@ -29,7 +30,7 @@ class ParticleFilter {
  public:
   // Constructor
   // @param num_particles Number of particles
-  ParticleFilter() : num_particles(0), is_initialized(false) {}
+  ParticleFilter(unsigned int num_particles = 1000) : num_particles(num_particles), is_initialized(false), rand_eng(std::default_random_engine()) {}
 
   // Destructor
   ~ParticleFilter() {}
@@ -113,13 +114,16 @@ class ParticleFilter {
 
  private:
   // Number of particles to draw
-  int num_particles; 
+  unsigned int num_particles;
   
   // Flag, if filter is initialized
   bool is_initialized;
   
   // Vector of weights of all particles
-  std::vector<double> weights; 
+  // std::vector<double> weights; // this is not neede, each particle has its weight
+
+  // random engine to get numbers from the normal distributions
+  std::default_random_engine rand_eng;
 };
 
 #endif  // PARTICLE_FILTER_H_
