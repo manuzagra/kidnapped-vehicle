@@ -138,18 +138,21 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
    *   and the following is a good resource for the actual equation to implement
    *   (look at equation 3.33) http://planning.cs.uiuc.edu/node99.html
    */
-	// for convenience convert the map single_landmark_s to LandmarkObs
-	auto SingleLandmark_to_LandmarkObs = [](const Map::single_landmark_s &map_landmark) -> LandmarkObs{
-		return LandmarkObs{map_landmark.id_i, map_landmark.x_f, map_landmark.y_f};
-	};
-	vector<LandmarkObs> landmarks(map_landmarks.landmark_list.size());
-	std::transform(map_landmarks.landmark_list.begin(), map_landmarks.landmark_list.end(), landmarks.begin(), SingleLandmark_to_LandmarkObs);
 
-	// make a copy of observations
-	vector<LandmarkObs> measurements = observations;
+
+
 	// this function is going to run for every particle in this->particles
-	auto update_single_weight = [sensor_range, &std_landmark, measurements, landmarks](Particle &p) mutable{
-		// measurements, landmarks are captured by copy because we are going to modify them here
+	auto update_single_weight = [sensor_range, &std_landmark, &observations, &map_landmarks](Particle &p) mutable{
+
+		// make a copy of observations
+		vector<LandmarkObs> measurements(observations);
+
+		auto SingleLandmark_to_LandmarkObs = [](const Map::single_landmark_s &map_landmark) -> LandmarkObs{
+			return LandmarkObs{map_landmark.id_i, map_landmark.x_f, map_landmark.y_f};
+		};
+		vector<LandmarkObs> landmarks(map_landmarks.landmark_list.size());
+		std::transform(map_landmarks.landmark_list.begin(), map_landmarks.landmark_list.end(), landmarks.begin(), SingleLandmark_to_LandmarkObs);
+
 
 		// Only landmarks within the sensor_range will be used
 		auto out_range = [sensor_range, &p](LandmarkObs &lm) -> bool{
@@ -182,7 +185,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		std::for_each(measurements.begin(), measurements.end(), to_map_coordinate_and_find_imilar);
 
 
-		// calculate the individual wheifg of every observation
+		// calculate the individual weight of every observation
 		auto observation_weight = [&landmarks, &std_landmark](LandmarkObs &obs){
 			// multivariate normal distribution to calculate the weight
 			auto multivariate_normal_distribution = [](double mu_x, double mu_y, double std_x, double std_y, double x, double y){
@@ -195,6 +198,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			  double weight = gauss_norm * exp(-exponent);
 			  return weight;
 			};
+
 			// find the landmark with given id
 			LandmarkObs related_lm = *std::find_if(landmarks.begin(), landmarks.end(), [&obs](LandmarkObs lm){return (obs.id == lm.id);});
 			// return the probability
@@ -202,9 +206,9 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		};
 		vector<double> individual_weights(measurements.size());
 		std::transform(measurements.begin(), measurements.end(), individual_weights.begin(), observation_weight);
-		// update the weight of the particle
-		p.weight = std::accumulate(individual_weights.begin(), individual_weights.end(), 1, std::multiplies<double>());;
 
+		// update the weight of the particle
+		p.weight = std::accumulate(individual_weights.begin(), individual_weights.end(), 1., std::multiplies<double>());
 	};
 	std::for_each(particles.begin(), particles.end(), update_single_weight);
 
