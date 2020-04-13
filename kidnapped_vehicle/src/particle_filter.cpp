@@ -45,6 +45,8 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 		particles[i].theta = theta + noise_theta(rand_eng);
 		particles[i].weight = 1;
 	}
+
+	is_initialized = true;
 }
 
 void ParticleFilter::prediction(double delta_t, double std_pos[], 
@@ -62,13 +64,31 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
 	std::normal_distribution<double> noise_y{0,std_pos[1]};
 	std::normal_distribution<double> noise_theta{0,std_pos[2]};
 
-	auto move = [this, delta_t, std_pos, velocity, yaw_rate, &noise_x, &noise_y, &noise_theta](Particle &p){
-		p.x = p.x + velocity/yaw_rate*(sin(p.theta+yaw_rate*delta_t)-sin(p.theta)) + noise_x(this->rand_eng);
-		p.y = p.y + velocity/yaw_rate*(cos(p.theta)-cos(p.theta+yaw_rate*delta_t)) + noise_y(this->rand_eng);
-		p.theta = p.theta + yaw_rate*delta_t + noise_theta(this->rand_eng);
-	};
+	if(fabs(yaw_rate)>0.0001){
+		// yaw_rate != 0
+		auto move = [this, delta_t, std_pos, velocity, yaw_rate, &noise_x, &noise_y, &noise_theta](Particle &p){
+			double x = p.x + velocity/yaw_rate*(sin(p.theta+yaw_rate*delta_t)-sin(p.theta)) + noise_x(this->rand_eng);
+			double y = p.y + velocity/yaw_rate*(cos(p.theta)-cos(p.theta+yaw_rate*delta_t)) + noise_y(this->rand_eng);
+			double theta = p.theta + yaw_rate*delta_t + noise_theta(this->rand_eng);
+			p.x = x;
+			p.y = y;
+			p.theta = theta;
+		};
 
-	std::for_each(particles.begin(), particles.end(), move);
+		std::for_each(particles.begin(), particles.end(), move);
+	}else{
+		// yaw_rate ~= 0
+		auto move = [this, delta_t, std_pos, velocity, yaw_rate, &noise_x, &noise_y, &noise_theta](Particle &p){
+			double x = p.x + velocity*delta_t*cos(p.theta) + noise_x(this->rand_eng);
+			double y = p.y + velocity*delta_t*sin(p.theta) + noise_y(this->rand_eng);
+			double theta = p.theta + noise_theta(this->rand_eng);
+			p.x = x;
+			p.y = y;
+			p.theta = theta;
+		};
+
+		std::for_each(particles.begin(), particles.end(), move);
+	}
 
 }
 
@@ -141,8 +161,10 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		// homogeneous transformation of the coordinates of the measurements
 		auto to_map_coordinate_and_find_imilar = [&p, &landmarks](LandmarkObs &obs){
 			// transform to map coordinate
-			obs.x = p.x + (cos(p.theta) * obs.x) - (sin(p.theta) * obs.y);
-			obs.y = p.y + (sin(p.theta) * obs.x) + (cos(p.theta) * obs.y);
+			double x = p.x + (cos(p.theta) * obs.x) - (sin(p.theta) * obs.y);
+			double y = p.y + (sin(p.theta) * obs.x) + (cos(p.theta) * obs.y);
+			obs.x = x;
+			obs.y = y;
 
 			// associate every observation with a landmark
 			// calculate the distance of every predicted to our observation and save it in distances
@@ -169,7 +191,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			  // calculate exponent
 			  double exponent = (pow(x - mu_x, 2) / (2 * pow(std_x, 2)))
 						   + (pow(y - mu_y, 2) / (2 * pow(std_y, 2)));
-			  // calculate weight using normalization terms and exponent
+			  // calculate weight using obs.normalization terms and exponent
 			  double weight = gauss_norm * exp(-exponent);
 			  return weight;
 			};
